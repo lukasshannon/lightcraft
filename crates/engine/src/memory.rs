@@ -26,7 +26,7 @@ pub fn default_budget() -> usize {
     if let Some(mb) = std::env::var("LIGHTCRAFT_MEMORY_MB").ok().and_then(|v| v.trim().parse::<usize>().ok()).filter(|m| *m >= 64) {
         return mb << 20;
     }
-    let cap = 3usize << 29; // 1.5 GiB
+    let cap = if cfg!(target_os = "android") { 512usize << 20 } else { 3usize << 29 };
     match total_ram() {
         Some(ram) => (ram / 4).clamp(256 << 20, cap),
         None => cap,
@@ -35,7 +35,7 @@ pub fn default_budget() -> usize {
 
 /// Physical memory (bytes), when the platform tells us without native calls.
 pub(crate) fn total_ram() -> Option<usize> {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         let s = std::fs::read_to_string("/proc/meminfo").ok()?;
         let kb: usize = s.lines().find(|l| l.starts_with("MemTotal:"))?.split_whitespace().nth(1)?.parse().ok()?;
@@ -51,7 +51,7 @@ pub(crate) fn total_ram() -> Option<usize> {
         let out = std::process::Command::new("/sbin/sysctl").args(["-n", "hw.physmem"]).output().ok()?;
         String::from_utf8_lossy(&out.stdout).trim().parse().ok()
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd")))]
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "freebsd")))]
     {
         None
     }

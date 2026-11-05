@@ -108,7 +108,7 @@ impl LibraryLock {
             Ok(f) => f,
             Err(e) => return Ok(unlocked(e)),
         };
-        match file.try_lock() {
+        match try_lock_file(&file) {
             Ok(()) => {}
             Err(TryLockError::WouldBlock) => {
                 let owner = std::fs::read(dir.join(OWNER)).ok().and_then(|b| serde_json::from_slice::<LockOwner>(&b).ok());
@@ -153,10 +153,31 @@ impl Drop for LibraryLock {
         if self.held {
             let _ = std::fs::remove_file(self.dir.join(OWNER));
             if let Some(f) = &self.file
-                && let Err(e) = f.unlock()
+                && let Err(e) = unlock_file(f)
             {
                 log::warn!("library {}: can't release {LOCK}: {e}", self.dir.display());
             }
         }
     }
+}
+
+#[cfg(not(target_os = "android"))]
+fn try_lock_file(file: &File) -> Result<(), TryLockError> {
+    file.try_lock()
+}
+
+#[cfg(target_os = "android")]
+fn try_lock_file(file: &File) -> Result<(), TryLockError> {
+    rustix::fs::flock(file, rustix::fs::FlockOperation::NonBlockingLockExclusive)
+        .map_err(|e| if e == rustix::io::Errno::WOULDBLOCK { TryLockError::WouldBlock } else { TryLockError::Error(e.into()) })
+}
+
+#[cfg(not(target_os = "android"))]
+fn unlock_file(file: &File) -> io::Result<()> {
+    file.unlock()
+}
+
+#[cfg(target_os = "android")]
+fn unlock_file(file: &File) -> io::Result<()> {
+    rustix::fs::flock(file, rustix::fs::FlockOperation::Unlock).map_err(Into::into)
 }

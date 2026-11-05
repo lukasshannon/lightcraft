@@ -66,6 +66,39 @@ pub const CURVE_PRESET_EXTENSIONS: &[&str] = &["lccurve", "json"];
 /// channel with the chosen paths (none = cancelled). `Err` when no dialog could be started.
 pub type Picker = Box<dyn FnMut(PickRequest) -> Result<Receiver<Vec<String>>, String>>;
 
+/// Android's export folder chooser must not block the event loop while SAF is open.
+pub(crate) fn android_export_folder(app: &mut LightcraftApp, ui: &mut egui::Ui) -> Option<String> {
+    use std::sync::{Arc, Mutex};
+    type Pending = Arc<Mutex<Receiver<Vec<String>>>>;
+    let id = egui::Id::new("android-export-folder");
+    let ctx = ui.ctx().clone();
+    let pending = ctx.data(|d| d.get_temp::<Pending>(id));
+    let mut answer = None;
+    if let Some(pending) = &pending {
+        match pending.lock().unwrap_or_else(std::sync::PoisonError::into_inner).try_recv() {
+            Ok(paths) => {
+                answer = paths.into_iter().next();
+                ctx.data_mut(|d| d.remove::<Pending>(id));
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => ctx.data_mut(|d| d.remove::<Pending>(id)),
+            Err(std::sync::mpsc::TryRecvError::Empty) => ctx.request_repaint_after(std::time::Duration::from_millis(250)),
+        }
+    }
+    let button = ui.add_enabled(pending.is_none(), egui::Button::new(crate::i18n::tr("Choose…")));
+    crate::widgets::register(ui.ctx(), "button:exportChooseFolder", button.rect);
+    if button.clicked()
+        && let Some(picker) = app.services.picker.as_mut()
+    {
+        match picker(PickRequest::folder("Android export folder")) {
+            Ok(rx) => {
+                ctx.data_mut(|d| d.insert_temp(id, Arc::new(Mutex::new(rx))));
+            }
+            Err(e) => app.toast_error(&ctx, e),
+        }
+    }
+    answer
+}
+
 /// A dialog that is up for a command. When it closes, the command runs again with the answer
 /// under `key`.
 pub struct Pending {

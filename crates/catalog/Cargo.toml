@@ -20,6 +20,11 @@ log = { workspace = true }
 chrono = { workspace = true }
 web-time = { workspace = true }
 
+[target.'cfg(target_os = "android")'.dependencies]
+# std's File::try_lock is not implemented on Android. Rustix supplies a safe
+# wrapper for the same flock operation and releases it on process death.
+rustix = { version = "1.1", features = ["fs"] }
+
 [dev-dependencies]
 lightcraft-geom = { workspace = true }
 proptest = { workspace = true }

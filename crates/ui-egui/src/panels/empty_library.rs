@@ -57,16 +57,20 @@ const IMPORT_LIGHTROOM: EmptyAction =
 /// menu item does; a refusal shows as a toast.
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, rect: Rect) {
     // the browser build can't read a Lightroom catalog from disk: only offer what works there
-    let actions: &[EmptyAction] = if cfg!(target_arch = "wasm32") { &[IMPORT_PHOTOS] } else { &[IMPORT_PHOTOS, IMPORT_LIGHTROOM] };
+    let actions: &[EmptyAction] = if cfg!(target_arch = "wasm32") || app.mobile_host { &[IMPORT_PHOTOS] } else { &[IMPORT_PHOTOS, IMPORT_LIGHTROOM] };
     let mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
     let hint = hint(&app.ui.settings.keymap, mac);
     let clicked = super::empty_state(
         ui,
         rect,
         "Your library is empty",
-        "Photos you import show up here. Nothing is copied or moved unless you choose to.",
+        if app.mobile_host {
+            "Choose photos from Android storage. A local copy stays with this library."
+        } else {
+            "Photos you import show up here. Nothing is copied or moved unless you choose to."
+        },
         actions,
-        Some(&hint),
+        (!app.mobile_host).then_some(hint.as_str()),
     );
     if let Some(command) = clicked
         && let Err(e) = app.run(command, json!({}))

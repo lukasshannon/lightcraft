@@ -994,7 +994,7 @@ pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
     let n = d.candidates.len();
     let (dups, in_source, trashed) = dup_counts(d);
     let sel = d.selected_paths().len();
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label(egui::RichText::new(crate::i18n::tr_format!("{n} found · {sel} selected", n = n, sel = sel)).color(t.text));
         if dups > 0 {
             ui.label(egui::RichText::new(crate::i18n::tr_format!("· {dups} already in the library", dups = dups)).color(t.text_dim));
@@ -1582,6 +1582,10 @@ fn inspect_sources(sources: &[String]) -> SourceSummary {
 /// A labelled row (fixed label column).
 fn field<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let t = Tokens::get(ui.ctx());
+    if cfg!(target_os = "android") && ui.available_width() < 500.0 {
+        ui.label(egui::RichText::new(crate::i18n::tr(label)).color(t.text_label));
+        return add(ui);
+    }
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(vec2(78.0, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.set_min_width(78.0);

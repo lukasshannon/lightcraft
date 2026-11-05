@@ -27,6 +27,7 @@ pub mod menu_level;
 pub mod menubar;
 pub mod menus;
 pub mod merge;
+pub mod mobile;
 mod model_setup;
 pub mod panels;
 pub mod pick;
@@ -35,6 +36,7 @@ pub mod recheck;
 pub mod region;
 pub mod reload;
 pub mod render;
+pub mod screen_edges;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod slideshow_export;
@@ -344,6 +346,8 @@ impl QuitPrompt {
 }
 
 pub struct LightcraftApp {
+    /// The Android host uses the existing views in a compact, rotating layout.
+    pub mobile_host: bool,
     pub(crate) model_setup: model_setup::Pending,
     /// Per-catalog-revision caches of library-wide results the panels show every frame
     /// (expensive on big libraries).
@@ -492,6 +496,7 @@ impl LightcraftApp {
         // AI mask requests run on the model's worker; frames apply their results (never wait)
         session.segmenter.background = true;
         Self {
+            mobile_host: false,
             session,
             ui: UiState::default(),
             services,
@@ -1471,12 +1476,16 @@ impl LightcraftApp {
         }
         // Order matters: earlier panels take the full edge (top bar spans the window; the tool strip,
         // right panels and left panel run to the bottom; the bottom bar sits between them).
-        panels::topbar::show(self, ui);
-        panels::library_problem::banner(self, ui);
-        panels::strip::show(self, ui);
-        // filled: the gaps the dock leaves between its panes show chrome, not the dark clear colour
-        let chrome = theme::Tokens::get(&ctx).chrome;
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(chrome)).show(ui, |ui| docking::show(self, ui));
+        if self.mobile_host {
+            mobile::show(self, ui);
+        } else {
+            panels::topbar::show(self, ui);
+            panels::library_problem::banner(self, ui);
+            panels::strip::show(self, ui);
+            // The dock's gaps show chrome, matching the panels.
+            let chrome = theme::Tokens::get(&ctx).chrome;
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(chrome)).show(ui, |ui| docking::show(self, ui));
+        }
         self.lights_out(&ctx);
         panels::second::show(self, &ctx);
         panels::notices::show(self, &ctx);

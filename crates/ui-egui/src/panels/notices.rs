@@ -105,14 +105,17 @@ fn window(ctx: &egui::Context, id: &str, title: &str, text: &str, buttons: &[(&s
         .resizable(false)
         .frame(frame)
         .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
-        .default_width(440.0)
+        .default_width(440.0_f32.min(screen.width() - 48.0))
+        .constrain_to(screen.shrink(8.0))
         .show(ctx, |ui| {
             // a fixed width: a wrapped label in an auto-sized, centred window would move it every frame
-            ui.set_width(420.0);
+            ui.set_width(420.0_f32.min(screen.width() - 56.0).max(100.0));
             ui.spacing_mut().item_spacing.y = 8.0;
-            ui.add(egui::Label::new(RichText::new(text).color(t.text_label)).wrap());
+            egui::ScrollArea::vertical().max_height((screen.height() - 140.0).max(40.0)).show(ui, |ui| {
+                ui.add(egui::Label::new(RichText::new(text).color(t.text_label)).wrap());
+            });
             ui.add_space(4.0);
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 for (i, (bid, label, _)) in buttons.iter().enumerate() {
                     let r = ui.add(egui::Button::new(crate::i18n::tr(label)).min_size(vec2(0.0, 26.0)));
                     register(ui.ctx(), format!("button:{bid}"), r.rect);

@@ -203,6 +203,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
     }
     let t = Tokens::get(ctx);
     let screen = ctx.content_rect();
+    let mobile = app.mobile_host;
     // The backdrop is an area below the dialog window (a bare `Middle` layer painter would be
     // painted after every area — i.e. over the dialog too).
     egui::Area::new(egui::Id::new("dialog-dim")).order(egui::Order::Middle).fixed_pos(screen.min).interactable(false).show(ctx, |ui| {
@@ -302,13 +303,16 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
     let mut body_h = None;
     let shown = egui::Window::new(crate::i18n::tr(&title)).id(window_id)
         .collapsible(false)
-        .resizable(import)
-        .vscroll(import)
+        .resizable(import && !mobile)
+        .vscroll(import && !mobile)
+        .constrain_to(screen.shrink(8.0))
+        .max_width(if mobile { (screen.width() - 48.0).max(120.0) } else { f32::INFINITY })
+        .max_height(if mobile { (screen.height() - 24.0).max(100.0) } else { f32::INFINITY })
         .resize(|r| if import { r.default_height(crate::import::DIALOG_SIZE[1]) } else { r })
         .frame(frame)
         .anchor(if settings { egui::Align2::CENTER_TOP } else { egui::Align2::CENTER_CENTER }, [0.0, if settings { top } else { 0.0 }])
         .min_width(widest)
-        .default_width(match dlg {
+        .default_width((match dlg {
             Dialog::Import { .. } => crate::import::DIALOG_SIZE[0],
             Dialog::SmartRules { .. } => 680.0,
             Dialog::AllMetadata { .. } => 620.0,
@@ -317,10 +321,10 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
             Dialog::LightroomCatalog { .. } => 440.0,
             Dialog::ManageEffects { .. } => 560.0,
             _ => 380.0,
-        })
+        }).min(if mobile { (screen.width() - 48.0).max(120.0) } else { f32::INFINITY }))
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
-            body_h = dialog_body(ui, (!import && !print).then_some(title.as_str()), body_max, |ui| match &mut dlg {
+            body_h = dialog_body(ui, (mobile || !import && !print).then_some(title.as_str()), body_max, |ui| match &mut dlg {
                 Dialog::AutoStack { gap } => {
                     ui.label(egui::RichText::new(crate::i18n::tr("Stack photos taken within this time of each other:")).color(t.text_label));
                     let r = ui.add(
@@ -1009,7 +1013,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                     // like Lightroom Classic's Export To: one folder, or each photo's own folder (not on
                     // the web, where originals live in the browser's storage, not in folders)
                     use lightcraft_engine::export::DestinationMode as D;
-                    if !cfg!(target_arch = "wasm32") || opts.destination_mode != D::SpecificFolder {
+                    if !app.mobile_host && (!cfg!(target_arch = "wasm32") || opts.destination_mode != D::SpecificFolder) {
                     choices(
                         ui,
                         "Export to",
@@ -1021,14 +1025,20 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                     if opts.destination_mode == D::SpecificFolder {
                         field(ui, "Folder", |ui| {
                             trailing_button_row(ui, |ui| {
-                                if app.services.pick_folder.is_some()
+                                if app.mobile_host {
+                                    if let Some(d) = crate::pick::android_export_folder(app, ui) { *dir = d; }
+                                } else if app.services.pick_folder.is_some()
                                     && crate::widgets::text_button(ui, "exportChooseFolder", crate::i18n::tr("Choose…"), false).clicked()
                                     && let Some(pick) = app.services.pick_folder.as_mut()
                                     && let Some(d) = pick()
                                 {
                                     *dir = d;
                                 }
-                                crate::widgets::named(ui.add(egui::TextEdit::singleline(dir).desired_width(ui.available_width())), crate::i18n::tr("Folder"));
+                                if app.mobile_host {
+                                    ui.label(if dir.is_empty() { "Choose an Android folder" } else { "Android folder selected" });
+                                } else {
+                                    crate::widgets::named(ui.add(egui::TextEdit::singleline(dir).desired_width(ui.available_width())), crate::i18n::tr("Folder"));
+                                }
                             });
                         });
                     }
@@ -2160,6 +2170,10 @@ fn slideshow_export_body(app: &mut LightcraftApp, ui: &mut egui::Ui, settings: &
 
 fn field<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let t = Tokens::get(ui.ctx());
+    if cfg!(target_os = "android") && ui.available_width() < 500.0 {
+        ui.label(egui::RichText::new(crate::i18n::tr(label)).color(t.text_label));
+        return add(ui);
+    }
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(egui::vec2(LABEL_W, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.set_min_width(LABEL_W);
@@ -2181,12 +2195,14 @@ fn trailing_button_row(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
 /// A labelled row of mutually exclusive choice buttons (ids `button:{id}-{index}`).
 fn choices<V: PartialEq + Copy>(ui: &mut egui::Ui, label: &str, id: &str, options: &[(V, &str)], value: &mut V) {
     field(ui, label, |ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
-        for (i, (v, l)) in options.iter().enumerate() {
-            if crate::widgets::text_button(ui, &format!("{id}-{i}"), l, *value == *v).clicked() {
-                *value = *v;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            for (i, (v, l)) in options.iter().enumerate() {
+                if crate::widgets::text_button(ui, &format!("{id}-{i}"), l, *value == *v).clicked() {
+                    *value = *v;
+                }
             }
-        }
+        });
     });
 }
 

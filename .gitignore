@@ -14,3 +14,12 @@ plan/
 # model weights are never committed (SAM 3: docs/ai-masks.md)
 *.safetensors
 *.safetensors.part
+
+# Android port: local tools, private signing identity and generated outputs
+/.tools/
+/.private/
+/artifacts/
+/craft-fonts/
+/lightcraft-android/target/
+/lightcraft-android/target-host/
+/lightcraft-android/build/
